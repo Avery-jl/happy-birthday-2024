@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>生日快乐 - 王思懿 🎂</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+            touch-action: none;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .countdown-panel {
+            position: absolute;
+            top: 75%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 15px 30px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            transition: top 0.8s ease;
+        }
+
+        .countdown-panel.top-position {
+            top: 25%;
+        }
+
+        .countdown-title {
+            font-size: clamp(1em, 4vw, 1.3em);
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .countdown-display {
+            display: flex;
+            gap: 8px;
+        }
+
+        .time-unit {
+            text-align: center;
+        }
+
+        .time-value {
+            font-size: clamp(1.5em, 5vw, 2.5em);
+            font-weight: bold;
+            color: #ff6b9d;
+            display: block;
+        }
+
+        .time-label {
+            font-size: 0.8em;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .gesture-info {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: white;
+            font-size: clamp(0.9em, 3vw, 1.1em);
+        }
+
+        .gesture-hint {
+            background: rgba(255, 107, 157, 0.2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+            margin-top: 10px;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: clamp(1.5em, 6vw, 3em);
+            color: white;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .message.show {
+            opacity: 1;
+        }
+
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s;
+        }
+
+        .loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-text {
+            font-size: 1.2em;
+            margin-top: 20px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loading">
+        <div class="loading-text">✨ 正在加载...</div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <div class="overlay">
+        <div class="countdown-panel">
+            <div class="countdown-title">🎊 王思懿的生日 🎊</div>
+            <div class="countdown-display">
+                <div class="time-unit">
+                    <span class="time-value" id="hours">00</span>
+                    <span class="time-label">时</span>
+                </div>
+                <div class="time-unit">
+                    <span class="time-value" id="minutes">00</span>
+                    <span class="time-label">分</span>
+                </div>
+                <div class="time-unit">
+                    <span class="time-value" id="seconds">00</span>
+                    <span class="time-label">秒</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="message" id="message"></div>
+
+        <div class="gesture-info">
+            <div id="gestureText">👆 点击切换效果</div>
+            <div class="gesture-hint" onclick="switchShape()">
+                💗 爱心 | 🌟 银河 | ✨ 王思懿 | 🎂 生日快乐
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // 粒子系统参数
+        const PARTICLE_COUNT = 5000;
+        const LERP_FACTOR = 0.05;
+        const INTERACTION_RADIUS = 150;
+        const INTERACTION_STRENGTH = 2.0;
+
+        let particles = [];
+        let targetShape = 'galaxy';
+        let touchX = null;
+        let touchY = null;
+
+        // 初始化粒子
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                particles.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    tx: canvas.width / 2,
+                    ty: canvas.height / 2,
+                    size: Math.random() * 1.5 + 0.5,
+                    opacity: Math.random() * 0.4 + 0.4,
+                    color: `hsl(${280 + Math.random() * 80}, 80%, 65%)`
+                });
+            }
+        }
+
+        // 生成爱心形状
+        function generateHeart() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const scale = Math.min(canvas.width, canvas.height) / 20;
+
+            particles.forEach((p, i) => {
+                const t = (i / PARTICLE_COUNT) * Math.PI * 2;
+                const x = 16 * Math.pow(Math.sin(t), 3);
+                const y = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+
+                p.tx = cx + x * scale;
+                p.ty = cy + y * scale;
+                p.color = `hsl(${340 + Math.random() * 20}, 90%, 60%)`;
+            });
+
+            showMessage('❤️ 生日快乐 ❤️');
+            document.querySelector('.countdown-panel').classList.remove('top-position');
+        }
+
+        // 生成文字
+        function generateText(text) {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = 800;
+            tempCanvas.height = 200;
+
+            tempCtx.fillStyle = 'white';
+            tempCtx.font = 'bold 120px Arial';
+            tempCtx.textAlign = 'center';
+            tempCtx.fillText(text, 400, 120);
+
+            const imageData = tempCtx.getImageData(0, 0, 800, 200);
+            const pixels = [];
+
+            for (let y = 0; y < 200; y += 4) {
+                for (let x = 0; x < 800; x += 4) {
+                    const index = (y * 800 + x) * 4;
+                    if (imageData.data[index + 3] > 128) {
+                        pixels.push({
+                            x: x - 400,
+                            y: y - 100
+                        });
+                    }
+                }
+            }
+
+            const scale = Math.min(canvas.width / 900, canvas.height / 400);
+            const cx = canvas.width / 2;
+            const cy = canvas.height * 0.35;
+
+            particles.forEach((p, i) => {
+                if (i < pixels.length) {
+                    const pixel = pixels[i];
+                    p.tx = cx + pixel.x * scale;
+                    p.ty = cy + pixel.y * scale;
+                } else {
+                    // 剩余粒子形成光环
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = 100 + Math.random() * 200;
+                    p.tx = cx + r * Math.cos(angle);
+                    p.ty = cy + r * Math.sin(angle);
+                }
+                p.color = `hsl(${200 + Math.random() * 60}, 80%, 65%)`;
+            });
+
+            showMessage(text);
+
+            // 倒计时面板移到上方
+            document.querySelector('.countdown-panel').classList.add('top-position');
+        }
+
+        // 生成银河
+        function generateGalaxy() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height * 0.75;
+            const maxRadius = Math.min(canvas.width, canvas.height) / 3;
+            const minRadius = maxRadius * 0.55;
+
+            particles.forEach((p, i) => {
+                const angle = Math.random() * Math.PI * 2;
+                const r = minRadius + Math.sqrt(Math.random()) * (maxRadius - minRadius);
+
+                p.tx = cx + r * Math.cos(angle);
+                p.ty = cy + r * Math.sin(angle);
+                p.color = `hsl(${240 + Math.random() * 60}, 80%, ${50 + r/maxRadius * 30}%)`;
+            });
+
+            hideMessage();
+
+            // 倒计时面板移到下方
+            document.querySelector('.countdown-panel').classList.remove('top-position');
+        }
+
+        // 显示/隐藏消息
+        function showMessage(text) {
+            const msgEl = document.getElementById('message');
+            msgEl.textContent = text;
+            msgEl.classList.add('show');
+        }
+
+        function hideMessage() {
+            document.getElementById('message').classList.remove('show');
+        }
+
+        // 切换形状
+        function switchShape() {
+            const shapes = ['heart', 'galaxy', 'name', 'birthday'];
+            const currentIndex = shapes.indexOf(targetShape);
+            const nextShape = shapes[(currentIndex + 1) % shapes.length];
+
+            targetShape = nextShape;
+            switch(nextShape) {
+                case 'heart': generateHeart(); break;
+                case 'galaxy': generateGalaxy(); break;
+                case 'name': generateText('王思懿'); break;
+                case 'birthday': generateText('生日快乐'); break;
+            }
+        }
+
+        // 触摸/鼠标交互
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchX = touch.clientX;
+            touchY = touch.clientY;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchX = touch.clientX;
+            touchY = touch.clientY;
+        });
+
+        canvas.addEventListener('touchend', () => {
+            touchX = null;
+            touchY = null;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            touchX = e.clientX;
+            touchY = e.clientY;
+        });
+
+        canvas.addEventListener('click', switchShape);
+
+        // 倒计时
+        function updateCountdown() {
+            const now = new Date();
+            const midnight = new Date(now);
+            midnight.setHours(23, 59, 59, 999);
+            const diff = midnight - now;
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            document.getElementById('hours').textContent = String(hours).padStart(2, '0');
+            document.getElementById('minutes').textContent = String(minutes).padStart(2, '0');
+            document.getElementById('seconds').textContent = String(seconds).padStart(2, '0');
+        }
+
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+
+        // 动画循环
+        function animate() {
+            // 拖尾效果
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach(p => {
+                // 移动到目标位置
+                p.x += (p.tx - p.x) * LERP_FACTOR;
+                p.y += (p.ty - p.y) * LERP_FACTOR;
+
+                // 触摸排斥力
+                if (touchX !== null) {
+                    const dx = p.x - touchX;
+                    const dy = p.y - touchY;
+                    const distSq = dx * dx + dy * dy;
+
+                    if (distSq < INTERACTION_RADIUS * INTERACTION_RADIUS) {
+                        const dist = Math.sqrt(distSq);
+                        const force = (1 - dist / INTERACTION_RADIUS) * INTERACTION_STRENGTH;
+                        p.x += dx * force;
+                        p.y += dy * force;
+                    }
+                }
+
+                // 随机扰动
+                p.x += (Math.random() - 0.5) * 0.3;
+                p.y += (Math.random() - 0.5) * 0.3;
+
+                // 绘制粒子
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.opacity;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            ctx.globalAlpha = 1;
+            requestAnimationFrame(animate);
+        }
+
+        // 窗口大小改变
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // 初始化
+        setTimeout(() => {
+            document.getElementById('loading').classList.add('hidden');
+            initParticles();
+            generateGalaxy();
+            animate();
+        }, 1000);
+    </script>
+</body>
+</html>
